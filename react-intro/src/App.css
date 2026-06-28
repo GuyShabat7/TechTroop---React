@@ -1,0 +1,26 @@
+.ex-space {
+  padding: 16px;
+  font-family: sans-serif;
+}
+
+.ex-title {
+  margin-bottom: 8px;
+}
+
+/* Exercise 2 */
+#weatherBox {
+  height: 300px;
+  width: 300px;
+}
+
+.freezing {
+  background-color: aqua;
+}
+
+.fair {
+  background-color: orange;
+}
+
+.hell-scape {
+  background-color: blue;
+}
