@@ -11,15 +11,17 @@ React apps are a **tree of components**. Data flows **down** through props, and
 events flow **up** through callback functions. In our app:
 
 ```
-App                         ← OWNS the username + sets up routing
- └── TweetsProvider         ← the shared "box" that OWNS the tweets (Context)
-      ├── NavBar            ← Home / Profile links, sticky at the top
+App                          ← OWNS the username + sets up routing
+ └── AuthProvider            ← shared "box" for the login session (Context)
+      ├── NavBar             ← Home / Profile + Login/Logout, sticky at the top
       └── (routes)
-           ├── HomePage     ← READS tweets/addTweet from context; gets username as prop
-           │    ├── CreateTweet  ← lets you type a tweet, tells HomePage "add this"
-           │    └── TweetList    ← receives the tweets, shows them
-           │         └── Tweet   ← shows ONE tweet
-           └── ProfilePage  ← edits the username, reports it up to App
+           ├── LoginPage     ← public: email/password login
+           ├── ProtectedRoute → HomePage        (redirects to /login if logged out)
+           │    └── TweetsProvider  ← shared "box" that OWNS the tweets (Context)
+           │         ├── CreateTweet  ← type a tweet, tells HomePage "add this"
+           │         └── TweetList    ← receives the tweets, shows them
+           │              └── Tweet   ← shows ONE tweet
+           └── ProtectedRoute → ProfilePage     ← edits the username, reports up to App
 ```
 
 Two ways data is shared in this app:
@@ -62,6 +64,14 @@ Two ways data is shared in this app:
 - **Supabase**: our backend. A hosted Postgres database with a ready-made JavaScript client
   (`supabase.from("Tweets").select()` / `.insert()`). The tweets now live there, not in
   localStorage.
+- **Authentication / session**: Supabase Auth lets a user log in with email + password
+  (`supabase.auth.signInWithPassword`). After login, the client holds a **session** (a token)
+  and automatically attaches it to every request, so the database knows you're an
+  `authenticated` user.
+- **RLS (Row Level Security)**: database rules on the `Tweets` table that only let
+  **authenticated** users read/insert. Without a valid session, the API returns no rows.
+- **Protected route**: a route that checks for a session and **redirects to `/login`** if
+  you're not logged in.
 
 ---
 
@@ -137,6 +147,18 @@ setTweets((prev) => [...prev, newTweet]);
   data call (read/insert) goes through this. *(The anon key is public by design; our table
   has RLS disabled so it's fully read/write for this exercise.)*
 
+### `src/lib/AuthContext.jsx` → `AuthProvider`, `useAuth`
+The **shared box** for the logged-in user (React Context over Supabase Auth).
+- **`session`** — the current login session (or `null` if logged out). This is what protected
+  routes and the navbar check.
+- **`useEffect(..., [])`** — on mount, reads the existing session with `getSession()`, then
+  subscribes with `onAuthStateChange(...)` so `session` updates automatically on login/logout.
+  The cleanup `unsubscribe()`s the listener.
+- **`login(email, password)`** — `supabase.auth.signInWithPassword(...)`; throws on error so
+  the login page can show it.
+- **`logout()`** — `supabase.auth.signOut()`.
+- **`useAuth()`** — hook to read `{ session, loading, login, logout }` anywhere.
+
 ### `src/lib/TweetsContext.jsx` → `TweetsProvider`, `useTweets`
 This is the **shared box** for the tweets (React Context), now backed by Supabase.
 - **`createContext(null)`** — makes the empty context object.
@@ -190,6 +212,19 @@ This is the **shared box** for the tweets (React Context), now backed by Supabas
 - **`<NavLink to="/">` / `<NavLink to="/profile">`** — links from react-router. Clicking one
   switches the page **without reloading the browser**. `NavLink` auto-adds an `active` CSS
   class to the link of the page you're currently on (that's the highlighted one).
+- **`useAuth()`** — reads the `session`. If logged in, shows a **Logout** button (calls
+  `logout()` then navigates to `/login`); if logged out, shows a **Login** link.
+
+### `src/components/ProtectedRoute.jsx` → `ProtectedRoute`
+- **`ProtectedRoute({ children })`** — a wrapper for pages that require login. It reads the
+  `session` via `useAuth()`; while auth is still `loading` it shows "Loading…", if there's
+  **no session** it renders `<Navigate to="/login" replace />` (redirect), otherwise it shows
+  the page (`children`).
+
+### `src/pages/LoginPage.jsx` → `LoginPage`
+- Email + password **controlled inputs** in local state.
+- **`handleSubmit`** — `async`: calls `login(email, password)`; on success `navigate("/")`,
+  on failure shows the server `error`. The button shows "Logging in…" while it waits.
 
 ### `src/pages/HomePage.jsx` → `HomePage`
 - **`HomePage({ username })`** — receives the current `username` as a prop from `App`.
@@ -215,12 +250,14 @@ This is the **shared box** for the tweets (React Context), now backed by Supabas
   loaded once from localStorage.
 - **`updateUsername(name)`** — updates state **and** calls `saveUsername` to persist it.
   Passed to `ProfilePage` as `onSave`.
-- **`<HashRouter> / <Routes> / <Route>`** — routing setup. Each `<Route>` maps a URL path
-  to a page: `/` → `HomePage`, `/profile` → `ProfilePage`. `NavBar` sits outside `<Routes>`
-  so it shows on every page. We use `HashRouter` (URLs contain `#`) so refreshing a page
-  works on GitHub Pages.
-- **`<TweetsProvider>`** — wraps the app so every page/component inside can reach the shared
-  tweets via `useTweets()`.
+- **`<HashRouter> / <Routes> / <Route>`** — routing setup. `/login` → `LoginPage` (public);
+  `/` → `HomePage` and `/profile` → `ProfilePage`, both wrapped in `<ProtectedRoute>` so
+  they redirect to `/login` when logged out. `NavBar` sits outside `<Routes>` so it shows on
+  every page. We use `HashRouter` (URLs contain `#`) so refreshing a page works on GitHub
+  Pages.
+- **`<AuthProvider>`** — wraps the whole app so every component can check the login session.
+- **`<TweetsProvider>`** — wraps **only the protected Home route**, so it fetches tweets from
+  the server only when you're logged in (it needs your session for RLS).
 
 ---
 

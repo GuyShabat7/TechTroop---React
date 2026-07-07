@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { HashRouter, Routes, Route } from "react-router-dom";
 import NavBar from "./components/NavBar";
+import ProtectedRoute from "./components/ProtectedRoute";
 import HomePage from "./pages/HomePage";
 import ProfilePage from "./pages/ProfilePage";
+import LoginPage from "./pages/LoginPage";
+import { AuthProvider } from "./lib/AuthContext";
 import { TweetsProvider } from "./lib/TweetsContext";
 import { loadUsername, saveUsername } from "./lib/user";
 import "./App.css";
@@ -16,17 +19,31 @@ export default function App() {
     }
 
     return (
-        <HashRouter>
-            <TweetsProvider>
+        <AuthProvider>
+            <HashRouter>
                 <NavBar />
                 <Routes>
-                    <Route path="/" element={<HomePage username={username} />} />
+                    <Route path="/login" element={<LoginPage />} />
+                    <Route
+                        path="/"
+                        element={
+                            <ProtectedRoute>
+                                <TweetsProvider>
+                                    <HomePage username={username} />
+                                </TweetsProvider>
+                            </ProtectedRoute>
+                        }
+                    />
                     <Route
                         path="/profile"
-                        element={<ProfilePage username={username} onSave={updateUsername} />}
+                        element={
+                            <ProtectedRoute>
+                                <ProfilePage username={username} onSave={updateUsername} />
+                            </ProtectedRoute>
+                        }
                     />
                 </Routes>
-            </TweetsProvider>
-        </HashRouter>
+            </HashRouter>
+        </AuthProvider>
     );
 }
