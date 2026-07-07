@@ -1,17 +1,17 @@
 import { useState } from "react";
 import { MAX_CHARS } from "../lib/constants";
 
-export default function CreateTweet({ onAddTweet }) {
+export default function CreateTweet({ onAddTweet, posting, error }) {
     const [text, setText] = useState("");
 
     const isTooLong = text.length > MAX_CHARS;
     const isEmpty = text.trim().length === 0;
 
-    function handleSubmit(e) {
+    async function handleSubmit(e) {
         e.preventDefault();
-        if (isTooLong || isEmpty) return;
-        onAddTweet(text.trim());
-        setText("");
+        if (isTooLong || isEmpty || posting) return;
+        const ok = await onAddTweet(text.trim());
+        if (ok) setText("");
     }
 
     return (
@@ -28,8 +28,9 @@ export default function CreateTweet({ onAddTweet }) {
                         The tweet can't contain more then 140 chars.
                     </span>
                 )}
-                <button type="submit" disabled={isTooLong}>
-                    Tweet
+                {error && <span className="create-tweet-error">{error}</span>}
+                <button type="submit" disabled={isTooLong || posting}>
+                    {posting ? "Posting..." : "Tweet"}
                 </button>
             </div>
         </form>

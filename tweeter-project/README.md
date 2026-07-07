@@ -1,16 +1,49 @@
-# React + Vite
+# Tweeter
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+A small Twitter clone built with React + Vite as a learning project.
 
-Currently, two official plugins are available:
+## Live site
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+**https://guyshabat7.github.io/TechTroop---React/**
 
-## React Compiler
+## Features
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Create tweets with a 140-character limit (button disabled + error message when over the limit)
+- Tweets list sorted newest-first, persisted in `localStorage` (survives refresh)
+- Profile page to change the username (saved locally, stamped on new tweets)
+- Sticky navbar with Home / Profile links (React Router, `HashRouter`)
+- Tweets shared app-wide via React Context, with a 5s interval that re-syncs the list
 
-## Expanding the Oxlint configuration
+## Getting started
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+```bash
+npm install     # install dependencies
+npm run dev     # start the dev server (http://localhost:5173)
+npm run build   # production build into dist/
+npm run preview # preview the production build locally
+```
+
+## Deployment (GitHub Pages)
+
+The app is deployed to GitHub Pages with the [`gh-pages`](https://www.npmjs.com/package/gh-pages) package.
+
+```bash
+npm run deploy
+```
+
+This builds the app and pushes `dist/` to the `gh-pages` branch. Notes:
+
+- `vite.config.js` sets `base: "/TechTroop---React/"` so asset paths resolve under the repo path.
+- `HashRouter` is used so page refreshes work on GitHub Pages (no server-side routing needed).
+- To update the live site after code changes: commit & push to `main`, then run `npm run deploy`.
+
+## Project structure
+
+```
+src/
+  components/   reusable UI pieces (Tweets, TweetList, CreateTweet, NavBar)
+  pages/        full screens (HomePage, ProfilePage)
+  lib/          reusable non-UI logic (constants, storage, user, TweetsContext)
+```
+
+See `EXPLANATION.md` for a detailed walkthrough of how the code works.

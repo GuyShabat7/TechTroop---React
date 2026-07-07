@@ -56,6 +56,12 @@ Two ways data is shared in this app:
   `<Provider value={...}>` fills it, and `useContext` (via our `useTweets` hook) reads it.
 - **Interval (`setInterval` / `clearInterval`)**: run some code repeatedly on a timer. We
   start it in a `useEffect` and **clear it** in the effect's cleanup so it doesn't leak.
+- **`async` / `await`**: talking to a server takes time. An `async` function can `await` a
+  request, pausing until the response comes back, without freezing the UI. We use it for
+  reading and creating tweets in Supabase.
+- **Supabase**: our backend. A hosted Postgres database with a ready-made JavaScript client
+  (`supabase.from("Tweets").select()` / `.insert()`). The tweets now live there, not in
+  localStorage.
 
 ---
 
@@ -126,57 +132,57 @@ setTweets((prev) => [...prev, newTweet]);
 - *Why a separate lib file:* same idea as `storage.js` — keep persistence logic out of the
   components, in one reusable place.
 
-### `src/lib/storage.js`
-- **`loadTweets()`** — reads the raw string from localStorage, `JSON.parse`s it into an
-  array, and returns it. Wrapped in `try/catch` returning `[]` so a missing or corrupt
-  value can't crash the app. *Why a lib function:* keeps localStorage details out of the
-  UI, and if we later switch to a server we only change this file.
-- **`saveTweets(tweets)`** — turns the array into a string with `JSON.stringify` and
-  writes it under `STORAGE_KEY`. (localStorage only stores strings, so we must stringify.)
+### `src/lib/supabase.js`
+- **`supabase`** — the Supabase client, created once with our project URL + anon key. Every
+  data call (read/insert) goes through this. *(The anon key is public by design; our table
+  has RLS disabled so it's fully read/write for this exercise.)*
 
 ### `src/lib/TweetsContext.jsx` → `TweetsProvider`, `useTweets`
-This is the **shared box** for the tweets (React Context).
+This is the **shared box** for the tweets (React Context), now backed by Supabase.
 - **`createContext(null)`** — makes the empty context object.
-- **`TweetsProvider({ children })`** — the component that actually holds the data and wraps
-  the app. Inside it:
-  - **`useState(() => loadTweets())`** — the tweets list, loaded once from localStorage.
-  - **`useEffect(..., [tweets])`** — saves to localStorage whenever the list changes.
-  - **`useEffect(..., [])`** with `setInterval(... 5000)` — every 5s it re-reads the latest
-    tweets (a stand-in for polling the server). The returned `clearInterval` is the
-    **cleanup** that stops the timer when the provider unmounts, so it doesn't leak.
-  - **`addTweet(tweet)`** — appends one tweet to the existing list (`[...prev, tweet]`). It
-    does **not** rebuild/refresh the whole list.
-  - **`<TweetsContext.Provider value={{ tweets, addTweet }}>`** — exposes those two things
-    to everything inside.
-- **`useTweets()`** — a small custom hook = `useContext(TweetsContext)`. Components call this
-  to read `tweets` / `addTweet` without prop drilling.
+- **`TweetsProvider({ children })`** — holds the data and wraps the app. Inside it:
+  - **`useState([])`** — the tweets list (starts empty, filled from the server).
+  - **`loading`** — `true` until the first fetch finishes, so the UI can show "Loading…".
+  - **`loadTweets()`** — `await supabase.from("Tweets").select("*")` reads all tweets from
+    the server and stores them in state.
+  - **`useEffect(..., [])`** — runs `loadTweets()` once on mount, then `setInterval(...5000)`
+    re-fetches every 5s to catch tweets someone else added. `clearInterval` cleanup stops
+    the timer when the provider unmounts.
+  - **`addTweet(tweet)`** — `await supabase.from("Tweets").insert(tweet).select()` saves the
+    new tweet to the server and gets it back (with its real `id`), then appends it to the
+    existing list (`[...prev, data[0]]`) — no full refresh. Throws on error so the caller
+    can show it.
+  - **`<TweetsContext.Provider value={{ tweets, loading, addTweet }}>`** — exposes these to
+    everything inside.
+- **`useTweets()`** — a small custom hook = `useContext(TweetsContext)`.
 
 ### `src/components/Tweets.jsx` → `Tweet`
 - **`Tweet({ tweet })`** — a presentational component. `{ tweet }` **destructures** the
-  props, pulling out the single `tweet` object. It shows the `username`, the time
-  (`new Date(createdAt).toISOString()` turns the number timestamp into an ISO string like
-  `2019-12-15T14:40:58.340Z`), and the text. It has no state and no logic — pure display.
+  props into `userName`, `content`, and `date` (the columns from the Supabase table). It
+  shows the username, the time (`new Date(date).toISOString()`), and the content. No state,
+  no logic — pure display.
 
 ### `src/components/TweetList.jsx` → `TweetList`
 - **`TweetList({ tweets })`** — receives the array as a prop.
-- **`[...tweets].sort((a, b) => b.createdAt - a.createdAt)`** — copies the array first
-  (`[...tweets]`) so we don't mutate the original, then sorts **descending** by timestamp
-  → newest first. `b - a` = descending; `a - b` would be ascending.
-- Renders `<Tweet key={tweet.id} ... />` for each. The **`key`** helps React track which
-  item is which across re-renders (must be unique — that's why each tweet has an `id`).
+- **`[...tweets].sort((a, b) => new Date(b.date) - new Date(a.date))`** — copies the array
+  first so we don't mutate the original, then sorts **descending** by `date` (newest first).
+  `new Date(...)` turns the ISO strings into comparable numbers.
+- Renders `<Tweet key={tweet.id} ... />` for each. The **`key`** is the server's `id`, which
+  helps React track which item is which across re-renders.
 - If the list is empty it shows a friendly message instead of a blank screen.
 
 ### `src/components/CreateTweet.jsx` → `CreateTweet`
-- **`CreateTweet({ onAddTweet })`** — receives a callback from the parent.
-- **`const [text, setText] = useState("")`** — state for the draft text. `text` is the
-  current value; `setText` updates it. Starts empty.
-- **`isTooLong`** — `text.length > MAX_CHARS`. When true, the error pill shows and the
-  button's `disabled` attribute is set → this is how we **block** tweets over 140 chars.
-- **`isEmpty`** — `text.trim().length === 0`. Used only inside `handleSubmit` to silently
-  stop blank tweets (the button stays enabled, matching the design).
-- **`handleSubmit(e)`** — runs on form submit: prevents page reload, guards against
-  invalid input, calls `onAddTweet(text.trim())`, then clears the box.
-- The **`<textarea>`** is controlled: `value={text}` + `onChange={...setText...}`.
+- **`CreateTweet({ onAddTweet, posting, error })`** — gets the submit callback plus two
+  status props: `posting` (a request is in flight) and `error` (server error text, if any).
+- **`const [text, setText] = useState("")`** — state for the draft text.
+- **`isTooLong`** — `text.length > MAX_CHARS`. When true, the error pill shows and the button
+  is disabled → blocks tweets over 140 chars.
+- **`isEmpty`** — `text.trim().length === 0`. Used inside `handleSubmit` to stop blank tweets.
+- **`handleSubmit(e)`** — `async`: prevents reload, guards against invalid input **and while
+  `posting`** (so you can't double-submit), `await`s `onAddTweet(...)`, and only clears the
+  box if it **succeeded** (so your text isn't lost on a server error).
+- The button shows **"Posting…"** and is disabled while a request runs; the server `error`
+  (if any) is shown in a red pill.
 
 ### `src/components/NavBar.jsx` → `NavBar`
 - **`<nav className="navbar">`** — a semantic HTML container meaning "navigation". Styled
@@ -187,10 +193,13 @@ This is the **shared box** for the tweets (React Context).
 
 ### `src/pages/HomePage.jsx` → `HomePage`
 - **`HomePage({ username })`** — receives the current `username` as a prop from `App`.
-- **`const { tweets, addTweet } = useTweets()`** — instead of owning the tweets, it now
-  **reads them from context**. The tweet state moved into `TweetsProvider`.
-- **`handleAddTweet(text)`** — builds a new tweet object (stamping the `username` prop) and
-  calls `addTweet(...)` from context.
+- **`const { tweets, loading, addTweet } = useTweets()`** — reads the tweets, the loading
+  flag, and the add function from context (they live in `TweetsProvider`).
+- **`posting` / `error` state** — track whether a post is in flight and hold a server error.
+- **`handleAddTweet(text)`** — `async`: sets `posting`, builds the tweet in the server's shape
+  `{ content, userName, date }`, `await`s `addTweet(...)`, catches any error into `error`, and
+  returns `true`/`false` so `CreateTweet` knows whether to clear the box.
+- Shows **"Loading tweets…"** until the first fetch finishes, then the `TweetList`.
 
 ### `src/pages/ProfilePage.jsx` → `ProfilePage`
 - **`ProfilePage({ username, onSave })`** — gets the current `username` (down) and an
@@ -206,21 +215,23 @@ This is the **shared box** for the tweets (React Context).
   loaded once from localStorage.
 - **`updateUsername(name)`** — updates state **and** calls `saveUsername` to persist it.
   Passed to `ProfilePage` as `onSave`.
-- **`<BrowserRouter> / <Routes> / <Route>`** — routing setup. Each `<Route>` maps a URL path
+- **`<HashRouter> / <Routes> / <Route>`** — routing setup. Each `<Route>` maps a URL path
   to a page: `/` → `HomePage`, `/profile` → `ProfilePage`. `NavBar` sits outside `<Routes>`
-  so it shows on every page.
+  so it shows on every page. We use `HashRouter` (URLs contain `#`) so refreshing a page
+  works on GitHub Pages.
 - **`<TweetsProvider>`** — wraps the app so every page/component inside can reach the shared
   tweets via `useTweets()`.
 
 ---
 
 ## 5. The data shape (what a "tweet" is)
+These are the columns of the Supabase `Tweets` table:
 ```js
 tweet = {
-  id: string,        // crypto.randomUUID(), unique — used as React's list key
-  username: string,  // the current username (editable on the Profile page)
-  text: string,      // what you typed
-  createdAt: number, // Date.now() — a timestamp, used to sort newest-first
+  id: number,       // auto-generated by Supabase — used as React's list key
+  content: string,  // the tweet text
+  userName: string, // who posted it (the current username)
+  date: string,     // ISO date string — used to sort newest-first
 }
 ```
 
