@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import NavBar from "./components/NavBar";
 import HomePage from "./pages/HomePage";
 import ProfilePage from "./pages/ProfilePage";
+import { TweetsProvider } from "./lib/TweetsContext";
 import { loadUsername, saveUsername } from "./lib/user";
 import "./App.css";
 
@@ -16,14 +17,16 @@ export default function App() {
 
     return (
         <BrowserRouter>
-            <NavBar />
-            <Routes>
-                <Route path="/" element={<HomePage username={username} />} />
-                <Route
-                    path="/profile"
-                    element={<ProfilePage username={username} onSave={updateUsername} />}
-                />
-            </Routes>
+            <TweetsProvider>
+                <NavBar />
+                <Routes>
+                    <Route path="/" element={<HomePage username={username} />} />
+                    <Route
+                        path="/profile"
+                        element={<ProfilePage username={username} onSave={updateUsername} />}
+                    />
+                </Routes>
+            </TweetsProvider>
         </BrowserRouter>
     );
 }

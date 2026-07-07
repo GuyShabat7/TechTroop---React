@@ -12,26 +12,28 @@ events flow **up** through callback functions. In our app:
 
 ```
 App                         ← OWNS the username + sets up routing
- ├── NavBar                 ← Home / Profile links, sticky at the top
- └── (routes)
-      ├── HomePage          ← OWNS the tweets array; gets username as a prop
-      │    ├── CreateTweet  ← lets you type a tweet, tells HomePage "add this"
-      │    └── TweetList    ← receives the tweets, shows them
-      │         └── Tweet   ← shows ONE tweet
-      └── ProfilePage       ← edits the username, reports it up to App
+ └── TweetsProvider         ← the shared "box" that OWNS the tweets (Context)
+      ├── NavBar            ← Home / Profile links, sticky at the top
+      └── (routes)
+           ├── HomePage     ← READS tweets/addTweet from context; gets username as prop
+           │    ├── CreateTweet  ← lets you type a tweet, tells HomePage "add this"
+           │    └── TweetList    ← receives the tweets, shows them
+           │         └── Tweet   ← shows ONE tweet
+           └── ProfilePage  ← edits the username, reports it up to App
 ```
 
-Key idea: **state lives in the closest common parent** ("lifting state up").
-- The **tweets** are only needed by Home, so `HomePage` owns them.
-- The **username** is needed by BOTH pages (Profile edits it, Home stamps it on
-  tweets), so their common parent `App` owns it.
+Two ways data is shared in this app:
 
-Children don't own shared data — they either *receive* it (props) or *report
-events* up (callback props).
+1. **Props (lifting state up)** — for the **username**. It's owned by `App` (the common
+   parent of both pages) and passed **down** as a prop; changes are reported **up** via the
+   `onSave` callback.
+2. **Context (a shared box)** — for the **tweets**. Instead of threading them through props,
+   `TweetsProvider` holds them, and any component inside calls `useTweets()` to read the
+   list or add a tweet. Use this when data is needed by many/deep components.
 
 - Data going **down** = **props** (e.g. `App` passes `username` to `HomePage`).
-- Events going **up** = **callback props** (e.g. `ProfilePage` calls `onSave`,
-  a function `App` gave it).
+- Events going **up** = **callback props** (e.g. `ProfilePage` calls `onSave`).
+- **Context** = skip the chain; grab shared data directly with a hook.
 
 ---
 
@@ -49,6 +51,11 @@ events* up (callback props).
   source of truth for what's typed.
 - **Re-render**: React calls your component function again to figure out the new UI.
   This is normal and cheap — it does NOT reload the page.
+- **Context (`createContext` / Provider / `useContext`)**: a way to share data with a whole
+  subtree without passing props at every level. `createContext` makes the "box", a
+  `<Provider value={...}>` fills it, and `useContext` (via our `useTweets` hook) reads it.
+- **Interval (`setInterval` / `clearInterval`)**: run some code repeatedly on a timer. We
+  start it in a `useEffect` and **clear it** in the effect's cleanup so it doesn't leak.
 
 ---
 
@@ -127,6 +134,23 @@ setTweets((prev) => [...prev, newTweet]);
 - **`saveTweets(tweets)`** — turns the array into a string with `JSON.stringify` and
   writes it under `STORAGE_KEY`. (localStorage only stores strings, so we must stringify.)
 
+### `src/lib/TweetsContext.jsx` → `TweetsProvider`, `useTweets`
+This is the **shared box** for the tweets (React Context).
+- **`createContext(null)`** — makes the empty context object.
+- **`TweetsProvider({ children })`** — the component that actually holds the data and wraps
+  the app. Inside it:
+  - **`useState(() => loadTweets())`** — the tweets list, loaded once from localStorage.
+  - **`useEffect(..., [tweets])`** — saves to localStorage whenever the list changes.
+  - **`useEffect(..., [])`** with `setInterval(... 5000)` — every 5s it re-reads the latest
+    tweets (a stand-in for polling the server). The returned `clearInterval` is the
+    **cleanup** that stops the timer when the provider unmounts, so it doesn't leak.
+  - **`addTweet(tweet)`** — appends one tweet to the existing list (`[...prev, tweet]`). It
+    does **not** rebuild/refresh the whole list.
+  - **`<TweetsContext.Provider value={{ tweets, addTweet }}>`** — exposes those two things
+    to everything inside.
+- **`useTweets()`** — a small custom hook = `useContext(TweetsContext)`. Components call this
+  to read `tweets` / `addTweet` without prop drilling.
+
 ### `src/components/Tweets.jsx` → `Tweet`
 - **`Tweet({ tweet })`** — a presentational component. `{ tweet }` **destructures** the
   props, pulling out the single `tweet` object. It shows the `username`, the time
@@ -162,14 +186,11 @@ setTweets((prev) => [...prev, newTweet]);
   class to the link of the page you're currently on (that's the highlighted one).
 
 ### `src/pages/HomePage.jsx` → `HomePage`
-- **`HomePage({ username })`** — now receives the current `username` as a prop from `App`.
-- **`const [tweets, setTweets] = useState(() => loadTweets())`** — the app's tweet data.
-  Passing a **function** to `useState` (a "lazy initializer") means `loadTweets()` runs
-  only once, on first render, not on every render.
-- **`useEffect(() => { saveTweets(tweets); }, [tweets])`** — auto-saves after every change
-  to `tweets`.
+- **`HomePage({ username })`** — receives the current `username` as a prop from `App`.
+- **`const { tweets, addTweet } = useTweets()`** — instead of owning the tweets, it now
+  **reads them from context**. The tweet state moved into `TweetsProvider`.
 - **`handleAddTweet(text)`** — builds a new tweet object (stamping the `username` prop) and
-  appends it to state (see section 3D).
+  calls `addTweet(...)` from context.
 
 ### `src/pages/ProfilePage.jsx` → `ProfilePage`
 - **`ProfilePage({ username, onSave })`** — gets the current `username` (down) and an
@@ -188,6 +209,8 @@ setTweets((prev) => [...prev, newTweet]);
 - **`<BrowserRouter> / <Routes> / <Route>`** — routing setup. Each `<Route>` maps a URL path
   to a page: `/` → `HomePage`, `/profile` → `ProfilePage`. `NavBar` sits outside `<Routes>`
   so it shows on every page.
+- **`<TweetsProvider>`** — wraps the app so every page/component inside can reach the shared
+  tweets via `useTweets()`.
 
 ---
 
