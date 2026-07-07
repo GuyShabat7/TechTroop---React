@@ -11,21 +11,27 @@ React apps are a **tree of components**. Data flows **down** through props, and
 events flow **up** through callback functions. In our app:
 
 ```
-App
- └── HomePage            ← OWNS the data (the tweets array) + all the logic
-      ├── CreateTweet    ← lets you type a tweet, tells HomePage "add this"
-      └── TweetList      ← receives the tweets, shows them
-           └── Tweet     ← shows ONE tweet
+App                         ← OWNS the username + sets up routing
+ ├── NavBar                 ← Home / Profile links, sticky at the top
+ └── (routes)
+      ├── HomePage          ← OWNS the tweets array; gets username as a prop
+      │    ├── CreateTweet  ← lets you type a tweet, tells HomePage "add this"
+      │    └── TweetList    ← receives the tweets, shows them
+      │         └── Tweet   ← shows ONE tweet
+      └── ProfilePage       ← edits the username, reports it up to App
 ```
 
-Key idea: **only `HomePage` holds the tweets in state.** The children don't own
-data — they either *receive* it (TweetList/Tweet) or *report events* up
-(CreateTweet). This pattern is called **"lifting state up"**: the state lives in
-the closest common parent so everyone can share it.
+Key idea: **state lives in the closest common parent** ("lifting state up").
+- The **tweets** are only needed by Home, so `HomePage` owns them.
+- The **username** is needed by BOTH pages (Profile edits it, Home stamps it on
+  tweets), so their common parent `App` owns it.
 
-- Data going **down** = **props** (e.g. `HomePage` passes `tweets` to `TweetList`).
-- Events going **up** = **callback props** (e.g. `CreateTweet` calls `onAddTweet`,
-  a function `HomePage` gave it).
+Children don't own shared data — they either *receive* it (props) or *report
+events* up (callback props).
+
+- Data going **down** = **props** (e.g. `App` passes `username` to `HomePage`).
+- Events going **up** = **callback props** (e.g. `ProfilePage` calls `onSave`,
+  a function `App` gave it).
 
 ---
 
@@ -100,10 +106,18 @@ setTweets((prev) => [...prev, newTweet]);
 ### `src/lib/constants.js`
 - **`MAX_CHARS = 140`** — the tweet length limit. Kept in one place so there are no
   "magic numbers" scattered around. `CreateTweet` imports it.
-- **`CURRENT_USER`** — a hard-coded username. Step 1 has no login, so every tweet you
-  create is tagged with this. Later this will come from real auth.
-- **`STORAGE_KEY`** — the string key used in localStorage. One name in one place, so
-  load and save always agree.
+- **`CURRENT_USER`** — the **default** username, used until the user changes it on the
+  Profile page. Every new tweet is tagged with the current username.
+- **`STORAGE_KEY`** — the string key used to store the tweets in localStorage.
+- **`USER_STORAGE_KEY`** — the string key used to store the chosen username in localStorage.
+
+### `src/lib/user.js`
+- **`loadUsername()`** — reads the saved username from localStorage; if none is saved yet,
+  falls back to `CURRENT_USER`. (`||` means "use the left value, or the right one if the
+  left is empty/null".)
+- **`saveUsername(name)`** — writes the username to localStorage so it survives refresh.
+- *Why a separate lib file:* same idea as `storage.js` — keep persistence logic out of the
+  components, in one reusable place.
 
 ### `src/lib/storage.js`
 - **`loadTweets()`** — reads the raw string from localStorage, `JSON.parse`s it into an
@@ -140,20 +154,40 @@ setTweets((prev) => [...prev, newTweet]);
   invalid input, calls `onAddTweet(text.trim())`, then clears the box.
 - The **`<textarea>`** is controlled: `value={text}` + `onChange={...setText...}`.
 
+### `src/components/NavBar.jsx` → `NavBar`
+- **`<nav className="navbar">`** — a semantic HTML container meaning "navigation". Styled
+  by CSS to be a bar and made `position: sticky` so it stays at the top on every page.
+- **`<NavLink to="/">` / `<NavLink to="/profile">`** — links from react-router. Clicking one
+  switches the page **without reloading the browser**. `NavLink` auto-adds an `active` CSS
+  class to the link of the page you're currently on (that's the highlighted one).
+
 ### `src/pages/HomePage.jsx` → `HomePage`
-- **`const [tweets, setTweets] = useState(() => loadTweets())`** — the app's real data.
+- **`HomePage({ username })`** — now receives the current `username` as a prop from `App`.
+- **`const [tweets, setTweets] = useState(() => loadTweets())`** — the app's tweet data.
   Passing a **function** to `useState` (a "lazy initializer") means `loadTweets()` runs
   only once, on first render, not on every render.
 - **`useEffect(() => { saveTweets(tweets); }, [tweets])`** — auto-saves after every change
   to `tweets`.
-- **`handleAddTweet(text)`** — builds a new tweet object and appends it to state
-  (see section 3D).
-- Renders the page: a title, `CreateTweet` (given `onAddTweet={handleAddTweet}`), and
-  `TweetList` (given `tweets={tweets}`).
+- **`handleAddTweet(text)`** — builds a new tweet object (stamping the `username` prop) and
+  appends it to state (see section 3D).
+
+### `src/pages/ProfilePage.jsx` → `ProfilePage`
+- **`ProfilePage({ username, onSave })`** — gets the current `username` (down) and an
+  `onSave` callback (to report changes up).
+- **`const [name, setName] = useState(username)`** — a **local draft** for the input box,
+  seeded with the current username. Typing changes the draft, not the real saved username.
+- **`handleSubmit(e)`** — on Save: prevents reload and calls `onSave(name.trim())`. The
+  page doesn't save anything itself — it just tells `App` the new name.
 
 ### `src/App.jsx` → `App`
-- **`App()`** — the root component. Right now it just renders `HomePage`. Kept thin so we
-  can add routing/layout around it later without touching the page logic.
+- **`App()`** — the root component. It now owns the shared `username` and sets up routing.
+- **`const [username, setUsername] = useState(() => loadUsername())`** — the real username,
+  loaded once from localStorage.
+- **`updateUsername(name)`** — updates state **and** calls `saveUsername` to persist it.
+  Passed to `ProfilePage` as `onSave`.
+- **`<BrowserRouter> / <Routes> / <Route>`** — routing setup. Each `<Route>` maps a URL path
+  to a page: `/` → `HomePage`, `/profile` → `ProfilePage`. `NavBar` sits outside `<Routes>`
+  so it shows on every page.
 
 ---
 
@@ -161,7 +195,7 @@ setTweets((prev) => [...prev, newTweet]);
 ```js
 tweet = {
   id: string,        // crypto.randomUUID(), unique — used as React's list key
-  username: string,  // CURRENT_USER for now
+  username: string,  // the current username (editable on the Profile page)
   text: string,      // what you typed
   createdAt: number, // Date.now() — a timestamp, used to sort newest-first
 }

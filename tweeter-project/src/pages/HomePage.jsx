@@ -2,9 +2,8 @@ import { useState, useEffect } from "react";
 import CreateTweet from "../components/CreateTweet";
 import TweetList from "../components/TweetList";
 import { loadTweets, saveTweets } from "../lib/storage";
-import { CURRENT_USER } from "../lib/constants";
 
-export default function HomePage() {
+export default function HomePage({ username }) {
     const [tweets, setTweets] = useState(() => loadTweets());
 
     useEffect(() => {
@@ -14,7 +13,7 @@ export default function HomePage() {
     function handleAddTweet(text) {
         const newTweet = {
             id: crypto.randomUUID(),
-            username: CURRENT_USER,
+            username,
             text,
             createdAt: Date.now(),
         };
