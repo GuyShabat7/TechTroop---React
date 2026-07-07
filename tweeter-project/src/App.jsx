@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { HashRouter, Routes, Route } from "react-router-dom";
 import NavBar from "./components/NavBar";
 import HomePage from "./pages/HomePage";
 import ProfilePage from "./pages/ProfilePage";
@@ -16,7 +16,7 @@ export default function App() {
     }
 
     return (
-        <BrowserRouter>
+        <HashRouter>
             <TweetsProvider>
                 <NavBar />
                 <Routes>
@@ -27,6 +27,6 @@ export default function App() {
                     />
                 </Routes>
             </TweetsProvider>
-        </BrowserRouter>
+        </HashRouter>
     );
 }
