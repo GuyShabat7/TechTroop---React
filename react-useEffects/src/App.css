@@ -1,0 +1,19 @@
+.posts {
+    display: flex;
+    gap: 16px;
+}
+
+.posts.row {
+    flex-wrap: wrap;
+}
+
+.posts.column {
+    flex-direction: column;
+    align-items: center;
+}
+
+.post {
+    border: 1px solid #ccc;
+    padding: 16px;
+    width: 250px;
+}
